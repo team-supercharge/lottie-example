@@ -1,0 +1,236 @@
+package io.supercharge.lottieexample;
+
+import android.animation.Animator;
+import android.animation.AnimatorInflater;
+import android.annotation.TargetApi;
+import android.content.Context;
+import android.content.res.TypedArray;
+import android.os.Build;
+import android.util.AttributeSet;
+import android.view.Gravity;
+import android.view.View;
+import android.view.animation.Interpolator;
+import android.widget.LinearLayout;
+
+import androidx.annotation.DrawableRes;
+
+/**
+ *
+ * Copy of {@link me.relex.circleindicator.CircleIndicator}, but this
+ * works without {@link androidx.viewpager.widget.ViewPager} instances.
+ *
+ **/
+@SuppressWarnings("magicNumber")
+public class PagerlessCircleIndicator extends LinearLayout {
+
+    private static final int DEFAULT_INDICATOR_WIDTH = 5;
+    private int mIndicatorMargin = -1;
+    private int mIndicatorWidth = -1;
+    private int mIndicatorHeight = -1;
+    private int mAnimatorResId = R.animator.scale_with_alpha;
+    private int mAnimatorReverseResId;
+    private int mIndicatorBackgroundResId = R.drawable.white_radius;
+    private int mIndicatorUnselectedBackgroundResId = R.drawable.white_radius;
+    private Animator mAnimatorOut;
+    private Animator mAnimatorIn;
+    private Animator mImmediateAnimatorOut;
+    private Animator mImmediateAnimatorIn;
+    private int count;
+    private int mLastPosition = -1;
+
+    public PagerlessCircleIndicator(Context context) {
+        super(context);
+        init(context, null);
+    }
+
+    public PagerlessCircleIndicator(Context context, AttributeSet attrs) {
+        super(context, attrs);
+        init(context, attrs);
+    }
+
+    public PagerlessCircleIndicator(Context context, AttributeSet attrs, int defStyleAttr) {
+        super(context, attrs, defStyleAttr);
+        init(context, attrs);
+    }
+
+    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
+    public PagerlessCircleIndicator(Context context, AttributeSet attrs, int defStyleAttr, int defStyleRes) {
+        super(context, attrs, defStyleAttr, defStyleRes);
+        init(context, attrs);
+    }
+
+    private void init(Context context, AttributeSet attrs) {
+        handleTypedArray(context, attrs);
+        checkIndicatorConfig(context);
+        createIndicators();
+    }
+
+    private void handleTypedArray(Context context, AttributeSet attrs) {
+        if (attrs == null) {
+            return;
+        }
+
+        TypedArray typedArray = context.obtainStyledAttributes(attrs, R.styleable.PagerlessCircleIndicator);
+
+        mIndicatorWidth = typedArray.getDimensionPixelSize(
+                R.styleable.PagerlessCircleIndicator_ci_width, -1);
+        mIndicatorHeight = typedArray.getDimensionPixelSize(
+                R.styleable.PagerlessCircleIndicator_ci_height, -1);
+        mIndicatorMargin = typedArray.getDimensionPixelSize(
+                R.styleable.PagerlessCircleIndicator_ci_margin, -1);
+        mAnimatorResId = typedArray.getResourceId(R.styleable.PagerlessCircleIndicator_ci_animator,
+                R.animator.scale_with_alpha);
+        mAnimatorReverseResId = typedArray.getResourceId(
+                R.styleable.PagerlessCircleIndicator_ci_animator_reverse, 0);
+        mIndicatorBackgroundResId = typedArray.getResourceId(
+                R.styleable.PagerlessCircleIndicator_ci_drawable, R.drawable.white_radius);
+        mIndicatorUnselectedBackgroundResId = typedArray.getResourceId(
+                R.styleable.PagerlessCircleIndicator_ci_drawable_unselected, mIndicatorBackgroundResId);
+
+        int orientation = typedArray.getInt(R.styleable.PagerlessCircleIndicator_pci_orientation, -1);
+        setOrientation(orientation == VERTICAL ? VERTICAL : HORIZONTAL);
+
+        int gravity = typedArray.getInt(R.styleable.PagerlessCircleIndicator_pci_gravity, -1);
+        setGravity(gravity >= 0 ? gravity : Gravity.CENTER);
+
+        count = typedArray.getInt(R.styleable.PagerlessCircleIndicator_ci_count, 0);
+        mLastPosition = typedArray.getInt(R.styleable.PagerlessCircleIndicator_ci_selected, -1);
+
+        typedArray.recycle();
+    }
+
+    private void checkIndicatorConfig(Context context) {
+        mIndicatorWidth = (mIndicatorWidth < 0) ? dip2px(DEFAULT_INDICATOR_WIDTH) : mIndicatorWidth;
+        mIndicatorHeight = (mIndicatorHeight < 0) ? dip2px(DEFAULT_INDICATOR_WIDTH) : mIndicatorHeight;
+        mIndicatorMargin = (mIndicatorMargin < 0) ? dip2px(DEFAULT_INDICATOR_WIDTH) : mIndicatorMargin;
+
+        mAnimatorResId = (mAnimatorResId == 0) ? R.animator.scale_with_alpha : mAnimatorResId;
+
+        mAnimatorOut = createAnimatorOut(context);
+        mImmediateAnimatorOut = createAnimatorOut(context);
+        mImmediateAnimatorOut.setDuration(0);
+
+        mAnimatorIn = createAnimatorIn(context);
+        mImmediateAnimatorIn = createAnimatorIn(context);
+        mImmediateAnimatorIn.setDuration(0);
+
+        mIndicatorBackgroundResId = (mIndicatorBackgroundResId == 0) ? R.drawable.white_radius
+                : mIndicatorBackgroundResId;
+        mIndicatorUnselectedBackgroundResId = (mIndicatorUnselectedBackgroundResId == 0) ? mIndicatorBackgroundResId
+                : mIndicatorUnselectedBackgroundResId;
+    }
+
+    private Animator createAnimatorOut(Context context) {
+        return AnimatorInflater.loadAnimator(context, mAnimatorResId);
+    }
+
+    private Animator createAnimatorIn(Context context) {
+        Animator animatorIn;
+        if (mAnimatorReverseResId == 0) {
+            animatorIn = AnimatorInflater.loadAnimator(context, mAnimatorResId);
+            animatorIn.setInterpolator(new ReverseInterpolator());
+        } else {
+            animatorIn = AnimatorInflater.loadAnimator(context, mAnimatorReverseResId);
+        }
+        return animatorIn;
+    }
+
+    public void setCount(int count) {
+        this.count = count;
+        createIndicators();
+    }
+
+    public void setSelectedItem(int selectedItem) {
+        if (count <= 0) {
+            return;
+        }
+
+        if (mAnimatorIn.isRunning()) {
+            mAnimatorIn.end();
+            mAnimatorIn.cancel();
+        }
+
+        if (mAnimatorOut.isRunning()) {
+            mAnimatorOut.end();
+            mAnimatorOut.cancel();
+        }
+
+        View currentIndicator = getChildAt(mLastPosition);
+
+        if (currentIndicator != null) {
+            currentIndicator.setBackgroundResource(mIndicatorUnselectedBackgroundResId);
+            mAnimatorIn.setTarget(currentIndicator);
+            mAnimatorIn.start();
+        }
+
+        View selectedIndicator = getChildAt(selectedItem);
+
+        if (selectedIndicator != null) {
+            selectedIndicator.setBackgroundResource(mIndicatorBackgroundResId);
+            mAnimatorOut.setTarget(selectedIndicator);
+            mAnimatorOut.start();
+        }
+
+        mLastPosition = selectedItem;
+    }
+
+    private void createIndicators() {
+        removeAllViews();
+
+        if (count <= 0) {
+            return;
+        }
+
+        int orientation = getOrientation();
+
+        for (int i = 0; i < count; i++) {
+            if (mLastPosition == i) {
+                addIndicator(orientation, mIndicatorBackgroundResId, mImmediateAnimatorOut);
+            } else {
+                addIndicator(orientation, mIndicatorUnselectedBackgroundResId, mImmediateAnimatorIn);
+            }
+        }
+    }
+
+    private void addIndicator(int orientation, @DrawableRes int backgroundDrawableId,
+                              Animator animator) {
+        if (animator.isRunning()) {
+            animator.end();
+            animator.cancel();
+        }
+
+        View indicator = new View(getContext());
+        indicator.setBackgroundResource(backgroundDrawableId);
+        addView(indicator, mIndicatorWidth, mIndicatorHeight);
+        LayoutParams lp = (LayoutParams) indicator.getLayoutParams();
+
+        if (orientation == HORIZONTAL) {
+            lp.leftMargin = mIndicatorMargin;
+            lp.rightMargin = mIndicatorMargin;
+        } else {
+            lp.topMargin = mIndicatorMargin;
+            lp.bottomMargin = mIndicatorMargin;
+        }
+
+        indicator.setLayoutParams(lp);
+
+        animator.setTarget(indicator);
+        animator.start();
+    }
+
+    public int dip2px(float dpValue) {
+        final float scale = getResources().getDisplayMetrics().density;
+        return (int) (dpValue * scale + 0.5f);
+    }
+
+    public int getSelectedItem() {
+        return mLastPosition;
+    }
+
+    private class ReverseInterpolator implements Interpolator {
+        @Override
+        public float getInterpolation(float value) {
+            return Math.abs(1.0f - value);
+        }
+    }
+}

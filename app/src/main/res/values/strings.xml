@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Lottie Example</string>
+    <string name="current_speed_label">Current speed value: %d</string>
+</resources>
